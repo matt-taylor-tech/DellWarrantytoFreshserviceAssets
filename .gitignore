@@ -1,0 +1,21 @@
+# Your real config. Only config.example.json is tracked.
+config.json
+
+# Credentials must never be committed. They come from environment variables.
+.env
+.env.*
+*.secrets.json
+*.secrets.xml
+secrets.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Local output
+*.log
+out/
+.claude/settings.json

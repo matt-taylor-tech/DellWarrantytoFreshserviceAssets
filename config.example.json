@@ -1,0 +1,49 @@
+{
+  "_comment": "Copy to config.json and edit. Credentials never go in here; they come from environment variables. See the README.",
+
+  "asset_types": ["Laptop", "Desktop", "Server", "Windows Server", "Monitor", "Dock", "Tablet"],
+
+  "_comment_asset_types": "Freshservice asset type NAMES to scan. Names, not ids, so this file is portable between helpdesks. Dell entitles monitors, docks and servers as well as computers, so they are all in by default. Watch out for CHILD types: a PowerEdge is often recorded under 'Windows Server' or 'VMware Server' rather than 'Server', and naming the parent does NOT include the children. List every child type you actually use. 'Dock' is usually a type you added yourself, so check its exact name.",
+
+  "product_match": ["latitude", "optiplex", "precision", "xps", "poweredge", "monitor", "dock", "thunderbolt", "dell"],
+
+  "_comment_product_match": "Case-insensitive substrings used to spot a Dell, checked against the asset name, description, and any product/model/manufacturer field. Only consulted when require_product_match is true.",
+
+  "require_product_match": false,
+
+  "_comment_require_product_match": "false (the default) selects on the service tag format alone, which is Dell specific and does not care that most assets are named after their hostname rather than their model. Set true only if your asset records reliably carry the model, otherwise you will silently skip machines that should have been synced.",
+
+  "service_tag_pattern": "^[A-Za-z0-9]{7}$",
+
+  "_comment_service_tag_pattern": "A Dell service tag is seven alphanumeric characters. Anything else is skipped, which keeps non-Dell hardware out of the run.",
+
+  "skip_asset_states": ["Retired", "Disposed"],
+
+  "_comment_skip_asset_states": "Asset states to leave alone, matched without regard to case against the asset's Asset State field. A machine that has left service needs no warranty data, and syncing it spends a write and fills the log. These are the default Freshservice state names; if you renamed yours, put your own names here. Set to [] to sync every state.",
+
+  "field_labels": {
+    "warranty_tier": ["warranty tier"],
+    "adp": ["accidental damage protection", "adp covered", "adp"],
+    "detail": ["dell coverage detail", "coverage detail"],
+    "warranty_expiry": ["warranty expiry date", "warranty expiry"],
+    "acquisition": ["acquisition date"],
+    "warranty_months": ["warranty"]
+  },
+
+  "_comment_field_labels": "Your Freshservice field LABELS. Case and padding do not matter. The tool looks up the real field key at runtime, because Freshservice keys carry your tenant's asset type id (for example warranty_tier_21001234567) and would not port. List several spellings if you are unsure which you used. This object is merged slot by slot with the built-in defaults, so naming one slot here leaves the others alone; set a slot to [] to switch that field off.",
+
+  "tiers": [
+    ["ProSupport Plus", "prosupport plus|prosupport flex"],
+    ["ProSupport", "prosupport"],
+    ["Premium Support", "premium support"],
+    ["Basic Onsite (NBD)", "next business day|basic onsite|basic hardware"],
+    ["Advanced Exchange", "advanced exchange"],
+    ["Return to Depot", "depot|carry[- ]in|mail[- ]in"]
+  ],
+
+  "_comment_tiers": "Ordered most to least specific: the FIRST match wins, so ProSupport Plus must come before ProSupport. The left value is written to Freshservice and must exactly match one of your dropdown choices. The right value is a regular expression matched against Dell's serviceLevelDescription. 'Advanced Exchange' is what Dell returns for monitors and docks; without it every monitor and dock gets a blank tier, because an unrecognised coverage is Unknown and Unknown is never written.",
+
+  "max_writes": 500,
+
+  "_comment_max_writes": "Blast-radius brake. The run stops after this many writes. Nothing should ever rewrite your whole estate in one go by accident. Set 0 to remove the cap."
+}

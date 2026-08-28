@@ -1,0 +1,47 @@
+name: checks
+
+# The offline checks only ever ran as a step of a manually dispatched sync, so
+# a change that broke the classification rules could sit on the default branch
+# unnoticed until someone triggered a run against a live helpdesk.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # The README promises 3.8+, so prove it on the oldest supported version
+        # as well as a current one. 3.8 is pinned to 22.04 because setup-python
+        # no longer publishes a 3.8 build for the 24.04 runner image.
+        include:
+          - os: ubuntu-22.04
+            python-version: "3.8"
+          - os: ubuntu-latest
+            python-version: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Offline checks
+        run: python3 dell_fs_sync.py --selftest
+
+      - name: Byte-compile
+        run: python3 -m compileall -q dell_fs_sync.py
+
+      - name: Example config is valid JSON and a valid config
+        run: |
+          python3 -c "import json; json.load(open('config.example.json'))"
+          cp config.example.json config.json
+          python3 -c "import dell_fs_sync as m; m.load_config('config.json')"
+          rm config.json

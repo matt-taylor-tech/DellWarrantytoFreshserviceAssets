@@ -1,0 +1,65 @@
+name: Dell warranty -> Freshservice asset sync
+
+# Weekly. Warranty coverage changes slowly, so a daily run would be noise.
+#
+# Required repository secrets:
+#   DELL_CLIENT_ID, DELL_CLIENT_SECRET      Dell TechDirect API credentials
+#   FRESHSERVICE_DOMAIN                     yourcompany.freshservice.com (no scheme)
+#   FRESHSERVICE_API_KEY                    agent API key with asset write permission
+#
+# Use an API key belonging to a service account, not a person. A key tied to an
+# individual stops working the day they leave, and the only symptom is silently
+# stale warranty data.
+
+# Manual only, on purpose. This repo is the source, not a scheduler. A scheduled
+# workflow here would fail every week for anyone who cloned the repo without
+# credentials. Schedule it where you deploy it: an Azure Automation runbook, a
+# private fork with secrets, or cron on a server.
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write to Freshservice? (false = dry run)"
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
+
+concurrency:
+  group: dell-warranty-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Offline checks
+        # No network and no credentials. Guards the classification rules,
+        # including the one that must never mark active coverage as Expired.
+        run: python3 dell_fs_sync.py --selftest
+
+      - name: Sync
+        env:
+          DELL_CLIENT_ID: ${{ secrets.DELL_CLIENT_ID }}
+          DELL_CLIENT_SECRET: ${{ secrets.DELL_CLIENT_SECRET }}
+          FRESHSERVICE_DOMAIN: ${{ secrets.FRESHSERVICE_DOMAIN }}
+          FRESHSERVICE_API_KEY: ${{ secrets.FRESHSERVICE_API_KEY }}
+          # Through the environment, never interpolated into the script body.
+          # A ${{ }} expression inside a run: block is substituted before bash
+          # sees it, so the input value would be executed as shell.
+          APPLY_INPUT: ${{ inputs.apply }}
+        run: |
+          APPLY=""
+          if [ "$APPLY_INPUT" = "true" ]; then APPLY="--apply"; fi
+          python3 dell_fs_sync.py $APPLY

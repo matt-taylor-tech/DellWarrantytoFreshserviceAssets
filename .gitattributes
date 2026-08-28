@@ -1,0 +1,6 @@
+# This runs on Linux runners. CRLF in a YAML run: block reaches bash as a
+# literal carriage return and fails with $'\r': command not found.
+*.py   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sh   text eol=lf
