@@ -364,11 +364,29 @@ A few decisions that are less obvious than they look.
 
 **Config is merged, not replaced, one level deep.** A config that named a single `field_labels` slot used to delete every other slot, which silently switched off two of the six fields for anyone who copied the example file. Naming a slot now overrides only that slot.
 
-**The collision guard reads the product and model fields, not just the name.** A Freshservice asset is usually named after its hostname, which names no product family at all, so a guard reading the name alone almost never fired.
+**The collision guard reads the name and the model fields, and deliberately not `description`.** An asset is usually named after its hostname, which names no product family at all, so a guard reading the name alone almost never fired. But `description` is free text where technicians leave notes, and a note only *mentions* a model, it does not claim the asset is one. All three of these blocked a laptop from ever syncing again:
+
+```
+"will not charge through the WD19 dock"    -> read as dock wd19
+"replaced under case S1234 by the vendor"  -> read as monitor s1234
+"swapped the P2725 for a bigger one"       -> read as monitor p2725
+```
+
+The last two only became possible when monitor model codes were added to
+`product_family`, which is that function's own warning playing out: a pattern
+that fails to recognise a product is safe, and a pattern that recognises the
+wrong thing is not. Widening what counts as a model widens what a note can be
+mistaken for.
+
+Blocking is not a harmless default. A blocked asset is never written again, so
+its coverage goes quietly stale, and stale coverage reads exactly like current
+coverage. So the guard reads only fields that state what the machine is, while
+the looser text still feeds `product_match`, where matching too eagerly only
+lets an asset through to the service-tag check.
 
 ## Tests
 
-`--selftest` runs 93 offline checks covering tier matching, ADP detection, the
+`--selftest` runs 105 offline checks covering tier matching, ADP detection, the
 expired rule, date comparison, config merging and validation, label
 normalisation, field resolution by label, the dropdown-choice and field-type
 pre-flights, asset-state reading, the split write that protects the expiry date,

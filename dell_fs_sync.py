@@ -583,10 +583,42 @@ def asset_product_text(asset):
 
     The asset `name` is usually a hostname (LT-JSMITH-01), which names no
     product at all. Reading the product and model type_fields as well is what
-    makes the Dell filter and the collision guard below actually fire; on the
-    name alone they almost never did.
+    makes the Dell filter actually fire; on the name alone it almost never did.
+
+    This feeds `looks_dell` only. Free text is welcome here, because matching
+    too eagerly just lets an asset through to the service-tag check, which is
+    the real filter. The collision guard needs the opposite bias, so it reads
+    `asset_model_text` instead.
     """
     parts = [asset.get("name"), asset.get("description")]
+    for key, value in (asset.get("type_fields") or {}).items():
+        if PRODUCT_KEY_RE.match(key):
+            parts.append(value)
+    return " ".join(str(p) for p in parts if p)
+
+
+def asset_model_text(asset):
+    """The parts of the record that state what the machine IS, for the guard.
+
+    Deliberately excludes `description`. That field is free text where
+    technicians leave notes, and a note only mentions a model, it does not
+    claim the asset is one. Notes like these all blocked a laptop:
+
+        "will not charge through the WD19 dock"   -> read as dock wd19
+        "replaced under case S1234 by the vendor" -> read as monitor s1234
+        "swapped the P2725 for a bigger one"      -> read as monitor p2725
+
+    The last two only became possible when MONITOR_RE was added, which is the
+    warning in `product_family` playing out: a pattern that fails to recognise
+    a product is safe, and a pattern that recognises the wrong thing is not.
+    Widening what counts as a model widens what a note can be mistaken for.
+
+    Blocking is not a harmless default. A blocked asset is never written
+    again, so its coverage silently goes stale, and stale coverage reads
+    exactly like current coverage. That is the failure this tool exists to
+    prevent, so the guard reads only fields that state the model.
+    """
+    parts = [asset.get("name")]
     for key, value in (asset.get("type_fields") or {}).items():
         if PRODUCT_KEY_RE.match(key):
             parts.append(value)
@@ -863,7 +895,7 @@ def main(argv=None):
         if not result["has_data"]:
             no_data.append(tag)
             continue
-        if not same_machine(asset_product_text(asset), result["product_line"]):
+        if not same_machine(asset_model_text(asset), result["product_line"]):
             mismatched.append(tag)
             continue
         keys = keys_by_type.get(asset["asset_type_id"], {})
@@ -1020,7 +1052,7 @@ def selftest():
     check("product text reaches the model field",
           product_family(asset_product_text(asset)), "latitude")
     check("guard blocks collision via model field",
-          same_machine(asset_product_text(asset), "OptiPlex 7010"), False)
+          same_machine(asset_model_text(asset), "OptiPlex 7010"), False)
     check("hostname alone names no family", product_family("LT-JSMITH-01"), None)
 
     upd = build_updates({"type_fields": {}},
@@ -1244,11 +1276,38 @@ def selftest():
     check("server family is recognised",
           product_family("POWEREDGE R450"), "poweredge")
 
+    # A note only MENTIONS a model; it does not claim the asset is one. Each of
+    # these blocked a laptop from ever syncing again before the guard stopped
+    # reading the description.
+    for _note, _reads_as in (("will not charge through the WD19 dock", "wd19"),
+                             ("replaced under case S1234 by the vendor", "s1234"),
+                             ("swapped the P2725 for a bigger one", "p2725")):
+        _asset = {"name": "LT-JSMITH-01", "description": _note, "type_fields": {}}
+        check("a note reading %s still reaches the Dell filter" % _reads_as,
+              product_family(asset_product_text(_asset)), _reads_as)
+        check("a note reading %s does not name the model" % _reads_as,
+              product_family(asset_model_text(_asset)), None)
+        check("a note reading %s no longer blocks the asset" % _reads_as,
+              same_machine(asset_model_text(_asset), "LATITUDE 5530"), True)
+
+    # The guard must still do its job on fields that do state the model.
+    check("a dock named as a dock still matches Dell",
+          same_machine(asset_model_text({"name": "Dell WD25 Dock_1"}),
+                       "DELL PRO DOCK WD25"), True)
+    check("a real collision is still blocked",
+          same_machine(asset_model_text({"name": "Dell WD25 Dock_1"}),
+                       "LATITUDE 5530"), False)
+    check("a model in a product field still guards",
+          same_machine(asset_model_text(
+              {"name": "LT-JSMITH-01",
+               "type_fields": {"product_5": "Latitude 5540"}}),
+              "OptiPlex 7010"), False)
+
     # A monitor named after its user carries no model, which must not block it.
     check("a monitor named after a person names no family",
-          product_family("Jane Doe Monitor_2"), None)
+          product_family("J Smith Monitor_2"), None)
     check("guard allows an unnamed monitor",
-          same_machine("Jane Doe Monitor_2", "DELL PRO 24 E2425HM"), True)
+          same_machine("J Smith Monitor_2", "DELL PRO 24 E2425HM"), True)
 
     # A VM's asset tag is not a service tag, and must not be treated as one.
     tag_pattern = re.compile(DEFAULT_CONFIG["service_tag_pattern"])
